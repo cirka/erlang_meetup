@@ -1,0 +1,45 @@
+
+%%function_clause
+lists:sort([3,2,1]).
+lists:sort(fffffff).
+
+%%case_clause
+case "Unexpected Value" of
+    expected_value -> ok;
+    other_expected_value -> 'also ok'
+ end.
+
+%%if_clause
+if 2 > 4 -> ok;
+   0 > 1 -> ok
+end.
+
+%%badmatch
+[X,Y] = {4,5}.
+
+%% badarg (Mainly BIF)
+erlang:binary_to_list("heh, already a list").
+
+%% undef
+lists:random([1,2,3]).
+
+%% badarith
+5 + atom_powered_engine.
+
+%% badfun
+Some = atomic,
+lists:foldl(Some,[],[1]).
+
+%%badarity
+Some = fun(A) ->A end,
+
+Some(1,2).
+
+%% system_limit
+
+lists:foreach(fun(A) -> erlang:list_to_atom(erlang:integer_to_list(A)) end,lists:seq(1,5000000))
+
+
+
+
+

@@ -1,0 +1,9 @@
+{application,logger,
+             [{description,[]},
+              {vsn,"1"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{logger_app,[]}},
+              {env,[]},
+              {modules,[logger,logger_app,logger_console,logger_disklog,
+                        logger_server,logger_sup]}]}.
