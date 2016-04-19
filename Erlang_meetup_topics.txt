@@ -1,0 +1,15 @@
+2016-01-13 1. Įavdas į Erlang/OTP
+2016-01-19 2. Duomenų tipai
+2016-01-26 3. Funkcijos
+2016-02-03 4. Aukštesnės eilės funkcijos
+2016-02-09 5. Apie klaidas ir ju apdorojima
+2016-02-16 6. Sprendžiam uždavinius fukciniu būdu
+2016-03-02 7. OTP bibliotekos duomenų struktūroms
+2016-03-08 8. Erlang procesai
+2016-03-15 9. Erlang procesų ryšiai (links,monitors) 
+2016-03-22 10. Erlang aplikacijos architektūra, paprastas serveris
+2016-03-29 11. OTP gen_server elgsena
+2016-04-06 12. OTP Supervisor elgsena
+2016-04-12 13: OTP gen_fsm, gen_event elgsenos
+2016-04-12 14: ETS 
+
