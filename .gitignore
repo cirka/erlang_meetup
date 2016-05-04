@@ -9,4 +9,4 @@
 **/rel/example_project
 **/.concrete/DEV_MODE
 **/TEST-*.xml
-
+**/*.swp
