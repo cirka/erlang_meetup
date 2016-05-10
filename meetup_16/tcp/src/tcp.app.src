@@ -1,0 +1,12 @@
+{application, tcp,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { tcp_app, []}},
+  {env, []}
+ ]}.
