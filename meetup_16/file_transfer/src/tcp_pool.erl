@@ -43,7 +43,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    {ok,Socket} = gen_tcp:listen(5555,[binary,{active,true},{packet,line}]),
+    {ok,Socket} = gen_tcp:listen(5555,[binary,{active,once}]),
     start_listeners(self()),
     {ok, {{simple_one_for_one, 5, 10}, [?CHILD(tcp_connection, tcp_connection, worker, [Socket])]}}.
 
