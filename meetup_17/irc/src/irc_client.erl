@@ -80,19 +80,20 @@ not_connected(connect,State) ->
             {next_state,not_connected,State}
     end.
 
-connected(present_yourself,#state{sock=Sock,nick=Nick,user=User,real_name=RealName} = State) ->
-    send_nick(Sock,Nick),
-    send_user(Sock, list_to_binary(User), unicode:characters_to_binary(RealName)),
+connected(present_yourself,#state{nick=Nick,user=User,real_name=RealName} = State) ->
+    send_msg(self(),["NICK ", Nick, "\r\n"]),
+    send_msg(self(),["USER ", User," 0 * :", unicode:characters_to_binary(RealName), "\r\n"]),
     {next_state, wait_confirm, State}.
 
-wait_confirm({msg_in,Binary},State) ->
-    io:format("Got msg: ~p~n",[Binary]),
-    {next_state,wait_confirm,State};
- 
+wait_confirm(login_success,State) ->
+    {next_state,logged_in,State};
+
 wait_confirm(_,State) ->
     {next_state,wait_confirm,State}.
     
-
+logged_in(_Event,State) ->
+    {next_state,logged_in,State}.
+ 
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -128,10 +129,16 @@ state_name(_Event, _From, State) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-handle_event(_Event, StateName, State) ->
+
+
+handle_event({send_msg,Msg}, StateName, #state{sock=Sock} = State) ->
+    gen_tcp:send(Sock,Msg),
+    {next_state, StateName, State};
+
+handle_event(Event, StateName, State) ->
     {next_state, StateName, State}.
 
-%%--------------------------------------------------------------------
+%--------------------------------------------------------------------
 %% @private
 %% @doc
 %% Whenever a gen_fsm receives an event sent using
@@ -244,14 +251,12 @@ decode([_,_|_Params] = Tokens,<<" :",Trailing/binary>>) ->
 decode([_,_|_Params] = Tokens,<<" ",BinRest/binary>>) ->
     case re:split(BinRest," ", [{parts,2}]) of
         [Middle,Rest1] ->
-%%            io:format("take_middle Rest1=~tp",[Rest1]),
             decode(Tokens ++ [strip_crlf(Middle)], <<" ",Rest1/binary>>);
         [Middle] ->
             decode(Tokens ++ [Middle],<<>>)
     end;
 
 decode([{sender,Sender},{command,Command}|Params],Bin) ->
-    io:format("rest of string:~tp~n",[Bin]),
     {in_msg,Sender,Command,Params}.
 
 decode_prefix(Prefix) -> Prefix.
@@ -261,13 +266,7 @@ strip_crlf(Bin) ->
     Result.
 
 dispatch(_Msg,_Rules) -> ok.
-    
-send_nick(Sock,Nick) ->
-    Msg = ["NICK ", Nick, "\r\n"],
-    gen_tcp:send(Sock,Msg).
 
-send_user(Sock, User, RealName) ->
-    Msg = [ "USER ", User," 0 * :", RealName, "\r\n"],
-    gen_tcp:send(Sock,Msg).
-
+send_msg(Pid,Msg) ->
+    gen_fsm:send_all_state_event(Pid,{send_msg,Msg}).
 
