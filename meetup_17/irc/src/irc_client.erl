@@ -135,7 +135,7 @@ handle_event({send_msg,Msg}, StateName, #state{sock=Sock} = State) ->
     gen_tcp:send(Sock,Msg),
     {next_state, StateName, State};
 
-handle_event(Event, StateName, State) ->
+handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
 %--------------------------------------------------------------------
@@ -224,9 +224,6 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 decode(Bin) when is_binary(Bin) ->
     decode([],Bin).
 
-%% return results
-decode([{sender,Sender},{command,Command}|Params],<<>>) ->
-    {in_msg,Sender,Command,Params};
 
 %% take prefix
 decode(Tokens,<<":",Rest/binary>>) ->
@@ -256,7 +253,8 @@ decode([_,_|_Params] = Tokens,<<" ",BinRest/binary>>) ->
             decode(Tokens ++ [Middle],<<>>)
     end;
 
-decode([{sender,Sender},{command,Command}|Params],Bin) ->
+%% return results
+decode([{sender,Sender},{command,Command}|Params],<<>>) ->
     {in_msg,Sender,Command,Params}.
 
 decode_prefix(Prefix) -> Prefix.
