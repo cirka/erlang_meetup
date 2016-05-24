@@ -13,7 +13,7 @@
          terminate/3,
          code_change/4]).
 -compile(export_all).
--record(state, {sock,server,nick,user,real_name, rules}).
+-record(state, {sock,server,nick,user,real_name,event_server,rules}).
 
 %%%===================================================================
 %%% API
@@ -31,6 +31,8 @@
 start_link(Nick,User,RealName) ->
     gen_fsm:start_link(?MODULE, [Nick,User,RealName], []).
 
+get_epid(PID) ->
+    gen_fsm:sync_send_all_state_event(PID,get_epid).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -50,8 +52,9 @@ start_link(Nick,User,RealName) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Nick,User,RealName]) ->
+    {ok,EPid} = irc_event_server:start_link(),
     gen_fsm:send_event_after(0,connect),
-    {ok, not_connected, #state{nick=Nick,user=User,real_name=RealName,rules=[]}}.
+    {ok, not_connected, #state{nick=Nick,user=User,real_name=RealName,rules=[],event_server=EPid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -80,7 +83,25 @@ not_connected(connect,State) ->
             {next_state,not_connected,State}
     end.
 
-connected(present_yourself,#state{nick=Nick,user=User,real_name=RealName} = State) ->
+connected(present_yourself,#state{nick=Nick,user=User,event_server=EPid, real_name=RealName} = State) ->
+    IrcSession = self(),
+    
+    Worker = 
+    fun() ->
+        WorkerPid = self(),
+            Handler =
+            fun
+                ({in_msg,_,<<"001">>,_},State1) ->
+                     WorkerPid ! connected,State1;
+                ( _, State1) -> State1
+            end,
+        irc_event_server:add_handler(EPid,Handler,0),
+        receive 
+            connected -> gen_fsm:send_event(IrcSession,login_success)
+        after 5000 -> ok
+        end
+    end,
+    spawn(Worker),
     send_msg(self(),["NICK ", Nick, "\r\n"]),
     send_msg(self(),["USER ", User," 0 * :", unicode:characters_to_binary(RealName), "\r\n"]),
     {next_state, wait_confirm, State}.
@@ -154,6 +175,9 @@ handle_event(_Event, StateName, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
+handle_sync_event(get_epid, _From, StateName, #state{event_server = Epid} = State) ->
+    {reply, {ok,Epid}, StateName, State};
+
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
@@ -180,9 +204,10 @@ handle_info({tcp_close,Sock},_StateName,#state{sock=Sock} = State) ->
     gen_fsm:send_event_after(0,connect),
     {next_state,not_connected,State};
 
-handle_info({tcp,Sock,Data}, StateName, #state{sock=Sock,rules=Rules} = State) ->
+handle_info({tcp,Sock,Data}, StateName, #state{sock=Sock,event_server=Epid} = State) ->
     Msg = decode(Data),
-    dispatch(Msg,Rules),
+    
+    gen_event:notify(Epid,Msg),
     {next_state, StateName, State};
 
 handle_info(_Info, StateName, State) ->
@@ -243,7 +268,6 @@ decode([{sender,_}] = Tokens,Bin) ->
 decode([_,_|_Params] = Tokens,<<" :",Trailing/binary>>) ->
    decode(Tokens ++ [strip_crlf(Trailing)],<<>>);
 
-
 %% take middle  
 decode([_,_|_Params] = Tokens,<<" ",BinRest/binary>>) ->
     case re:split(BinRest," ", [{parts,2}]) of
@@ -268,3 +292,13 @@ dispatch(_Msg,_Rules) -> ok.
 send_msg(Pid,Msg) ->
     gen_fsm:send_all_state_event(Pid,{send_msg,Msg}).
 
+
+
+%list_channels(Pid) ->
+%    
+%   Handler =  fun({in_msg,_,_,<<"322">>,Name,Count,Topic},State) ->
+%        [{Name,Count,Topic} |State];
+%        (_,State) -> State;
+%    end,
+%    
+%
