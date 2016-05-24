@@ -10,6 +10,10 @@
 2016-03-22 10. Erlang aplikacijos architektūra, paprastas serveris
 2016-03-29 11. OTP gen_server elgsena
 2016-04-06 12. OTP Supervisor elgsena
-2016-04-12 13: OTP gen_fsm, gen_event elgsenos
-2016-04-12 14: ETS 
+2016-04-12 13. OTP gen_fsm, gen_event elgsenos
+2016-04-12 14. ETS
+2016-05-04 15. EUnit
+2016-05-10 16. TCP/UDP Sockets
+2016-05-17 17. IRC Bot Workshop #1
+2016-05-24 18. IRC Bot Workshop #2
 
