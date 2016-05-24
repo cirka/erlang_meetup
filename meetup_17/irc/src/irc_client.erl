@@ -13,7 +13,7 @@
          terminate/3,
          code_change/4]).
 -compile(export_all).
--record(state, {sock,server,nick,user,real_name}).
+-record(state, {sock,server,nick,user,real_name, rules}).
 
 %%%===================================================================
 %%% API
@@ -51,7 +51,7 @@ start_link(Nick,User,RealName) ->
 %%--------------------------------------------------------------------
 init([Nick,User,RealName]) ->
     gen_fsm:send_event_after(0,connect),
-    {ok, not_connected, #state{nick=Nick,user=User,real_name=RealName}}.
+    {ok, not_connected, #state{nick=Nick,user=User,real_name=RealName,rules=[]}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -76,7 +76,8 @@ not_connected(connect,State) ->
             gen_fsm:send_event_after(0,present_yourself),
             {next_state,connected,State#state{sock=Sock}};
         _Else ->
-            gen_fsm:send_event_after(5000,connect)
+            gen_fsm:send_event_after(5000,connect),
+            {next_state,not_connected,State}
     end.
 
 connected(present_yourself,#state{sock=Sock,nick=Nick,user=User,real_name=RealName} = State) ->
@@ -168,9 +169,13 @@ handle_info({tcp,Sock,<<"PING :",Token/binary>>}, StateName, #state{sock=Sock} =
     gen_tcp:send(Sock,<<"PONG :",Token/binary>>),
     {next_state, StateName, State};
 
-handle_info({tcp,Sock,Data}, StateName, #state{sock=Sock} = State) ->
+handle_info({tcp_close,Sock},_StateName,#state{sock=Sock} = State) ->
+    gen_fsm:send_event_after(0,connect),
+    {next_state,not_connected,State};
+
+handle_info({tcp,Sock,Data}, StateName, #state{sock=Sock,rules=Rules} = State) ->
     Msg = decode(Data),
-    gen_fsm:send_event(self(),{msg_in,Msg}),
+    dispatch(Msg,Rules),
     {next_state, StateName, State};
 
 handle_info(_Info, StateName, State) ->
@@ -209,28 +214,60 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 
 %:irc.data.lt 001 oposum :Welcome to the Aitvaras IRC Network oposum!~cirka@88.216.170.123
 
-decode(Payload) ->
-    case re:split(Payload,"^:(\\S+)\\s(.*)") of 
-        [<<>>,Prefix,Rest,_Whitespaces] ->decode(Prefix,Rest);
-        [Payload] -> decode(no_prefix,Payload)
-    end.
+decode(Bin) when is_binary(Bin) ->
+    decode([],Bin).
 
-decode(Prefix,Payload) ->
-    case  re:split(Payload,"^(\\d{3})\\s(.*)") of
-        [<<>>,<<":",Command/binary>>,Params,<<>>] ->
-                {in_msg,{Prefix,binary_to_integer(Command),Params}};
-        Else ->decode_simple(Prefix,Else)
-    end.
+%% return results
+decode([{sender,Sender},{command,Command}|Params],<<>>) ->
+    {in_msg,Sender,Command,Params};
+
+%% take prefix
+decode(Tokens,<<":",Rest/binary>>) ->
+    [Prefix,Rest1] = re:split(Rest," ", [{parts,2}]),
+    decode(Tokens++[{sender,decode_prefix(Prefix)}],Rest1);
+
+%% add prefix token when command is send without prefix
+decode(Tokens,Bin) when Tokens == [] ->
+    decode([{sender,peer}],Bin);
+
+%% take command
+decode([{sender,_}] = Tokens,Bin) ->
+    [<<>>,Command,Params,_] = re:split(Bin,"(*CRLF)^([[:alpha:]]+|\\d{3})(.*)"),
+    decode(Tokens ++ [{command,Command}],Params);
+
+%% take trailing
+decode([_,_|_Params] = Tokens,<<" :",Trailing/binary>>) ->
+   decode(Tokens ++ [strip_crlf(Trailing)],<<>>);
+
+
+%% take middle  
+decode([_,_|_Params] = Tokens,<<" ",BinRest/binary>>) ->
+    case re:split(BinRest," ", [{parts,2}]) of
+        [Middle,Rest1] ->
+%%            io:format("take_middle Rest1=~tp",[Rest1]),
+            decode(Tokens ++ [strip_crlf(Middle)], <<" ",Rest1/binary>>);
+        [Middle] ->
+            decode(Tokens ++ [Middle],<<>>)
+    end;
+
+decode([{sender,Sender},{command,Command}|Params],Bin) ->
+    io:format("rest of string:~tp~n",[Bin]),
+    {in_msg,Sender,Command,Params}.
+
+decode_prefix(Prefix) -> Prefix.
+
+strip_crlf(Bin) ->
+    [<<>>,Result|_Rest] = re:split(Bin,"(*CRLF)(.*)"),
+    Result.
+
+dispatch(_Msg,_Rules) -> ok.
     
-decode_simple(Prefix, Command) -> 
-     {in_msg,{Prefix,Command}}.
-
 send_nick(Sock,Nick) ->
     Msg = ["NICK ", Nick, "\r\n"],
     gen_tcp:send(Sock,Msg).
 
 send_user(Sock, User, RealName) ->
-    Msg = [ "USER ", User," 0 * ", RealName, "\r\n"],
+    Msg = [ "USER ", User," 0 * :", RealName, "\r\n"],
     gen_tcp:send(Sock,Msg).
 
 
