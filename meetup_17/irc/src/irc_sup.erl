@@ -22,6 +22,12 @@ start_link() ->
 %% Supervisor callbacks
 %% ===================================================================
 
+
+
 init([]) ->
-    {ok, { {one_for_one, 5, 10}, []} }.
+
+    {ok, { {one_for_one, 5, 10}, 
+     [
+      ?CHILD(irc_registry,worker)
+     ]} }.
 
