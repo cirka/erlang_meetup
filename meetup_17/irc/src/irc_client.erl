@@ -47,9 +47,18 @@ start_link(Session, ServerName, Nick,User,RealName) when is_list(ServerName) ->
 start_link(Session, {_S,_P} = Server, Nick,User,RealName) -> 
     gen_fsm:start_link({via,irc_registry,{Session,session}},?MODULE, [Session, Server,Nick,User,RealName], []).
 
--spec send_msg( Pid :: pid(), Msg :: term()) -> term().
-send_msg(Pid,Msg) ->
-    gen_fsm:send_all_state_event(Pid,{send_msg,Msg}).
+-type id() :: pid() | term().
+-spec send_msg(Id :: id(), Msg :: term()) -> term().
+
+send_msg(Pid,Msg) when is_pid(Pid) ->
+    gen_fsm:send_all_state_event(Pid,{send_msg,Msg});
+
+send_msg(Session,Msg) ->
+    case irc_registry:whereis_name({Session,session}) of
+        Pid when is_pid(Pid) ->
+                send_msg(Pid,Msg);
+        _Else -> not_found
+    end.
 
 
 %%%===================================================================
