@@ -3,8 +3,9 @@
 -behaviour(gen_event).
 
 %% API
--export([start_link/0,
-         add_handler/3]).
+-export([start_link/1,
+         add_handler/3,
+         notify/2]).
 
 %% gen_event callbacks
 -export([init/1,
@@ -25,8 +26,8 @@
 %% @spec start_link() -> {ok, Pid} | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_event:start_link().
+start_link(Session) ->
+    gen_event:start_link({via,irc_registry,{Session,events}}).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -35,8 +36,11 @@ start_link() ->
 %% @spec add_handler(Handler, Args) -> ok | {'EXIT', Reason} | term()
 %% @end
 %%--------------------------------------------------------------------
-add_handler(Pid, Args,InitState) ->
-    gen_event:add_sup_handler(Pid,?MODULE, [Args,InitState]).
+add_handler(Session, Args,InitState) ->
+    gen_event:add_sup_handler({via,irc_registry,{Session,events}},?MODULE, [Args,InitState]).
+
+notify(Session,Msg) ->
+    gen_event:notify({via,irc_registry,{Session,events}},Msg).
 
 %%%===================================================================
 %%% gen_event callbacks
