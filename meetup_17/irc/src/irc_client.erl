@@ -3,7 +3,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/3]).
+-export([start_link/5,send_msg/2]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -12,8 +12,15 @@
          handle_info/3,
          terminate/3,
          code_change/4]).
--compile(export_all).
--record(state, {sock,server,nick,user,real_name,event_server,rules}).
+
+%% export FSM state funcions
+-export([not_connected/2,
+         connected/2,
+         wait_confirm/2,
+         logged_in/2]).
+
+
+-record(state, {sock,server,session,nick,user,real_name}).
 
 %%%===================================================================
 %%% API
@@ -24,15 +31,26 @@
 %% Creates a gen_fsm process which calls Module:init/1 to
 %% initialize. To ensure a synchronized start-up procedure, this
 %% function does not return until Module:init/1 has returned.
-%%
-%% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Nick,User,RealName) ->
-    gen_fsm:start_link(?MODULE, [Nick,User,RealName], []).
+-type servername() :: ServerName :: list() | {ServerName :: list(), ServerPort :: list()}. 
+-spec start_link( SessionName :: term(),
+                  Server :: servername(),
+                  Nick :: list(),
+                  UserName :: list(),
+                  RealName :: unicode:unicode_binary()) -> {ok,pid()} | {error,Reason :: term()}.
 
-get_epid(PID) ->
-    gen_fsm:sync_send_all_state_event(PID,get_epid).
+
+start_link(Session, ServerName, Nick,User,RealName) when is_list(ServerName) -> 
+    start_link(Session, {ServerName,6667}, Nick,User,RealName);
+
+start_link(Session, {_S,_P} = Server, Nick,User,RealName) -> 
+    gen_fsm:start_link({via,irc_registry,{Session,session}},?MODULE, [Session, Server,Nick,User,RealName], []).
+
+-spec send_msg( Pid :: pid(), Msg :: term()) -> term().
+send_msg(Pid,Msg) ->
+    gen_fsm:send_all_state_event(Pid,{send_msg,Msg}).
+
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -51,10 +69,13 @@ get_epid(PID) ->
 %%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
-init([Nick,User,RealName]) ->
-    {ok,EPid} = irc_event_server:start_link(),
+init([Session, Server, Nick, User, RealName]) ->
     gen_fsm:send_event_after(0,connect),
-    {ok, not_connected, #state{nick=Nick,user=User,real_name=RealName,rules=[],event_server=EPid}}.
+    {ok, not_connected, #state{session=Session,
+                               server = Server,
+                               nick=Nick,
+                               user=User,
+                               real_name=RealName }}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -71,9 +92,9 @@ init([Nick,User,RealName]) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-not_connected(connect,State) ->
-    ServerName = application:get_env(irc,server,"irc.data.lt"),
-    ServerPort = application:get_env(irc,port,6667),
+
+
+not_connected(connect,#state{ server={ServerName,ServerPort}} = State) ->
     case gen_tcp:connect(ServerName,ServerPort,[{active,true},{packet,line},binary]) of
         {ok,Sock} ->
             gen_fsm:send_event_after(0,present_yourself),
@@ -83,7 +104,7 @@ not_connected(connect,State) ->
             {next_state,not_connected,State}
     end.
 
-connected(present_yourself,#state{nick=Nick,user=User,event_server=EPid, real_name=RealName} = State) ->
+connected(present_yourself,#state{nick=Nick,user=User,session=Session, real_name=RealName} = State) ->
     IrcSession = self(),
     
     Worker = 
@@ -95,7 +116,7 @@ connected(present_yourself,#state{nick=Nick,user=User,event_server=EPid, real_na
                      WorkerPid ! connected,State1;
                 ( _, State1) -> State1
             end,
-        irc_event_server:add_handler(EPid,Handler,0),
+        irc_event_server:add_handler(Session,Handler,0),
         receive 
             connected -> gen_fsm:send_event(IrcSession,login_success)
         after 5000 -> ok
@@ -114,7 +135,8 @@ wait_confirm(_,State) ->
     
 logged_in(_Event,State) ->
     {next_state,logged_in,State}.
- 
+
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -133,9 +155,9 @@ logged_in(_Event,State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
-state_name(_Event, _From, State) ->
-    Reply = ok,
-    {reply, Reply, state_name, State}.
+
+%TODO implement sync handlers for all states ....
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -175,9 +197,6 @@ handle_event(_Event, StateName, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
-handle_sync_event(get_epid, _From, StateName, #state{event_server = Epid} = State) ->
-    {reply, {ok,Epid}, StateName, State};
-
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
@@ -204,10 +223,9 @@ handle_info({tcp_close,Sock},_StateName,#state{sock=Sock} = State) ->
     gen_fsm:send_event_after(0,connect),
     {next_state,not_connected,State};
 
-handle_info({tcp,Sock,Data}, StateName, #state{sock=Sock,event_server=Epid} = State) ->
+handle_info({tcp,Sock,Data}, StateName, #state{sock=Sock,session=Session} = State) ->
     Msg = decode(Data),
-    
-    gen_event:notify(Epid,Msg),
+    irc_event_server:notify(Session,Msg),
     {next_state, StateName, State};
 
 handle_info(_Info, StateName, State) ->
@@ -286,11 +304,6 @@ decode_prefix(Prefix) -> Prefix.
 strip_crlf(Bin) ->
     [<<>>,Result|_Rest] = re:split(Bin,"(*CRLF)(.*)"),
     Result.
-
-dispatch(_Msg,_Rules) -> ok.
-
-send_msg(Pid,Msg) ->
-    gen_fsm:send_all_state_event(Pid,{send_msg,Msg}).
 
 
 
