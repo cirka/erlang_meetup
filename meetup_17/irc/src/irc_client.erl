@@ -228,7 +228,8 @@ handle_info({tcp,Sock,<<"PING :",Token/binary>>}, StateName, #state{sock=Sock} =
     gen_tcp:send(Sock,<<"PONG :",Token/binary>>),
     {next_state, StateName, State};
 
-handle_info({tcp_close,Sock},_StateName,#state{sock=Sock} = State) ->
+handle_info({tcp_closed,Sock},_StateName,#state{sock=Sock} = State) ->
+    io:format("yada yafa"),
     gen_fsm:send_event_after(0,connect),
     {next_state,not_connected,State};
 
@@ -237,7 +238,8 @@ handle_info({tcp,Sock,Data}, StateName, #state{sock=Sock,session=Session} = Stat
     irc_event_server:notify(Session,Msg),
     {next_state, StateName, State};
 
-handle_info(_Info, StateName, State) ->
+handle_info(Info, StateName, State) ->
+    io:format("Unhandled msg:~p in State:~p~n",[Info,State]),
     {next_state, StateName, State}.
 
 
